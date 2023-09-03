@@ -1,5 +1,6 @@
 #include "systemcalls.h"
 
+
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -17,7 +18,14 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
-    return true;
+// MAGED: system() returns 0 since there is no command processor under CICS, otherwise it returns -1.
+   int system_return = system(cmd);
+   if(system_return == 0)
+   {
+   	return true;
+   }
+
+    return false;
 }
 
 /**
@@ -47,7 +55,7 @@ bool do_exec(int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    //command[count] = command[count];
 
 /*
  * TODO:
@@ -58,8 +66,39 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-
     va_end(args);
+
+    pid_t pid;
+    int status;
+    pid = fork();
+    if(pid == -1) // -1 means : fork was unsuccess
+    {
+    	perror("fork");
+        return false;
+    }
+    else if(pid == 0)
+    {
+        // Child process: execute the command using execv
+        if(execv(command[0],command) == -1)
+        {    
+	    perror("execv");
+            exit(EXIT_FAILURE);
+        }
+    }
+    else
+    {
+        // Parent process: wait for the child to finish
+        waitpid(pid, &status, 0);
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0) 
+        {
+            return true; // Child process executed successfully
+        } 
+        else 
+        {
+            return false; // Child process encountered an error
+        }
+    }
+
 
     return true;
 }
@@ -82,7 +121,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    //command[count] = command[count];
 
 
 /*
@@ -92,8 +131,36 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
-
     va_end(args);
-
+    int pid;
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if (fd < 0) 
+    { 
+    	perror("open"); abort(); 
+    }
+    switch (pid = fork()) 
+    {
+  	case -1: perror("fork"); abort();
+  	case 0:
+    		if (dup2(fd, 1) < 0) 
+    		{ 
+    		     perror("dup2"); abort(); 
+    		}
+    		close(fd);
+    		execvp(command[0], command); perror("execvp"); abort();
+  	default:
+    		close(fd);
+    		/* do whatever the parent wants to do. */
+    		int status;
+        	waitpid(pid, &status, 0);
+        	if (WIFEXITED(status) && WEXITSTATUS(status) == 0) 
+        	{
+            	     return true; // Child process executed successfully
+        	} 
+        	else 
+        	{
+            	     return false; // Child process encountered an error
+        	}
+	}
     return true;
 }
